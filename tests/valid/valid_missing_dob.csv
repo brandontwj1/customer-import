@@ -1,0 +1,6 @@
+full_name,email,date_of_birth,timezone
+Alice Smith,alice.smith@example.com,,Australia/Sydney
+Bob Jones,bob.jones@example.com,,Europe/London
+Carol White,carol.white@example.com,,America/New_York
+David Lee,david.lee@example.com,,Asia/Tokyo
+Eve Martinez,eve.martinez@example.com,,Pacific/Auckland

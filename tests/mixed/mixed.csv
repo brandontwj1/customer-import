@@ -1,0 +1,7 @@
+full_name,email,date_of_birth,timezone
+Alice Smith,alice@example.com,1990-05-15,Australia/Sydney
+Bob Jones,bob@example.com,1985-03-20,Europe/London
+Charlie Brown,,1992-11-01,America/New_York
+Diana Prince,diana@example.com,2099-01-01,Pacific/Auckland
+Eve Adams,notanemail,1988-07-22,Asia/Tokyo
+Frank Castle,frank@example.com,1975-08-01,InvalidZone

@@ -1,31 +1,28 @@
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const connectDB = require('./config/db');
+const importRoutes = require('./routes/importRoutes');
 require('dotenv').config();
 
-const app = express();
 
-const uri = process.env.MONGO_URI;
-const client = new MongoClient(uri);
+const app = express();
+app.use(express.json());
 
 async function startServer() {
   try {
-    await client.connect();
-    console.log("✅ Connected to MongoDB");
+    await connectDB();
 
-    app.get('/', async (req, res) => {
-      const db = client.db("testdb");
-      const result = await db.collection("test").insertOne({ message: "Hello Mongo!" });
+    app.get('/', (req, res) => res.json({ status: 'ok' }));
 
-      res.send("Inserted document with ID: " + result.insertedId);
-    });
-
-    app.listen(3000, '0.0.0.0', () => {
-      console.log('🚀 Server running on port 3000');
+    app.use('/api/import', importRoutes);
+    
+    app.listen(3000, () => {
+      console.log('Server running on port 3000');
     });
 
   } catch (err) {
-    console.error("❌ MongoDB connection failed:", err);
-  }
+    console.error('MongoDB connection failed:', err);
+    process.exit(1);
+  } 
 }
 
 startServer();

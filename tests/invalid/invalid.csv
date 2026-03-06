@@ -1,0 +1,7 @@
+full_name,email,date_of_birth,timezone
+,noname@example.com,1990-01-01,UTC
+Valid Name,notanemail,1990-01-01,UTC
+Valid Name,valid@example.com,not-a-date,UTC
+Valid Name,valid2@example.com,2099-12-31,UTC
+Valid Name,valid3@example.com,1990-01-01,Mars/Olympus
+,bademail,2099-01-01,FakeZone
