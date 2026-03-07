@@ -1,30 +1,43 @@
 const { parse } = require('csv-parse/sync');
-const { randomUUID } = require('crypto');
 const multer = require('multer');
+const { Types } = require('mongoose');
 const Customer = require('../models/Customer');
 const ImportJob = require('../models/ImportJob');
 const { validateRow } = require('../services/csvService');
+const { logger } = require('../middleware/logger');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
+const DEFAULT_PAGE_SIZE = 20;
+const DEFAULT_PAGE_NUMBER = 1;
+const MAX_PAGE_SIZE = 100;
+
+const ERROR_MESSAGES = {
+    INVALID_PAGE: 'Invalid page number. Must be a positive integer.',
+    LIMIT_TOO_LARGE: `Limit exceeds maximum allowed value of ${MAX_PAGE_SIZE}.`,
+    INVALID_CSV: 'Could not parse CSV file. Check that it is valid CSV with a header row.',
+    IMPORT_JOB_NOT_FOUND: 'Import job not found.',
+    EMAIL_IN_USE: 'Email already exists in the database.',
+    NO_FILE_UPLOADED: 'No file uploaded. Use form-data with field name "file".',
+};
+
+// POST /api/import - accepts multipart form-data with a CSV file, returns import job _id immediately
 async function uploadCSV(req, res, next) {
-    console.log('Received file upload request');
+    logger.info('Received file upload request');
     try {
         if (!req.file) {
-            console.warn('Upload request rejected: missing file in multipart form-data');
+            logger.warn('Upload request rejected: missing file in multipart form-data');
             return res.status(400).json({
-                error: 'No file uploaded. Use form-data with field name "file".',
+                error: ERROR_MESSAGES.NO_FILE_UPLOADED,
             });
         }
 
-        // Generate the job ID before the DB call.
         const job = await ImportJob.create({
-            jobId: randomUUID(),
             filename: req.file.originalname,
             status: 'processing',
         });
 
-        console.log(`Created import job with ID: ${job.jobId} for file: ${job.filename}`);
+        logger.info('Created import job', { jobId: String(job._id), filename: job.filename });
 
         // Parse the CSV buffer into row objects
         let records;
@@ -35,15 +48,15 @@ async function uploadCSV(req, res, next) {
                 trim: true,
             });
         } catch (parseErr) {
-            console.error(`CSV parse failed for job ${job.jobId}:`, parseErr.message);
+            logger.error('CSV parse failed', { jobId: String(job._id), error: parseErr.message });
             await ImportJob.findByIdAndUpdate(job._id, { status: 'failed' });
             return res.status(400).json({
-                error: 'Could not parse CSV file. Check that it is valid CSV with a header row.',
-                jobId: job.jobId,
+                error: ERROR_MESSAGES.INVALID_CSV,
+                id: job._id,
             });
         }
 
-        console.log(`Processing job ${job.jobId} with ${records.length} records`);
+        logger.info('Processing import job records', { jobId: String(job._id), totalRecords: records.length });
 
         let successCount = 0;
         const rejectedRecords = [];
@@ -55,7 +68,6 @@ async function uploadCSV(req, res, next) {
             // Validate the row with csvService
             const errorMsgs = validateRow(row);
             if (errorMsgs.length > 0) {
-                console.warn(`Row ${rowNumber} rejected for job ${job.jobId}: ${errorMsgs.join('; ')}`);
                 rejectedRecords.push({ row: rowNumber, data: row, errorMsgs });
                 continue;
             }
@@ -74,9 +86,8 @@ async function uploadCSV(req, res, next) {
             } catch (dbErr) {
                 // Code 11000 = duplicate key (email already exists in the customers collection)
                 const reason = dbErr.code === 11000
-                    ? 'email already exists in the database'
+                    ? ERROR_MESSAGES.EMAIL_IN_USE
                     : 'database error: ' + dbErr.message;
-                console.warn(`Row ${rowNumber} failed DB insert for job ${job.jobId}: ${reason}`);
                 rejectedRecords.push({ row: rowNumber, data: row, errorMsgs: [reason] });
             }
         }
@@ -90,34 +101,78 @@ async function uploadCSV(req, res, next) {
             rejectedRecords,
         });
 
-        console.log(
-            `Job ${job.jobId} completed. Total: ${records.length}, Success: ${successCount}, Failed: ${rejectedRecords.length}`
-        );
+        logger.info('Import job completed', {
+            jobId: String(job._id),
+            totalRecords: records.length,
+            successCount,
+            failedCount: rejectedRecords.length,
+        });
 
-        return res.status(202).json({ jobId: job.jobId });
+        return res.status(202).json({ id: job._id });
 
     } catch (err) {
-        console.error('Unexpected error in uploadCSV:', err);
+        logger.error('Unexpected error in uploadCSV', { error: err.message, stack: err.stack });
         next(err);
     }
 }
 
-async function getImportResult(req, res, next) {
+// GET /api/import/:id - retrieves the import job result by ID
+async function getImportsById(req, res, next) {
     try {
-        // jobId is a UUID string — query by the jobId field, not the MongoDB _id.
-        const job = await ImportJob.findOne({ jobId: req.params.jobId });
+        const { id } = req.params;
 
-        if (!job) {
-            console.warn('Import result requested for unknown jobId:', req.params.jobId);
-            return res.status(404).json({ error: 'Import job not found' });
+        if (!Types.ObjectId.isValid(id)) {
+            return res.status(404).json({ error: ERROR_MESSAGES.IMPORT_JOB_NOT_FOUND });
         }
 
-        console.log('Fetching import result for job:', job.jobId);
+        const job = await ImportJob.findById(id);
+
+        if (!job) {
+            logger.warn('Import result requested for unknown _id', { id });
+            return res.status(404).json({ error: ERROR_MESSAGES.IMPORT_JOB_NOT_FOUND });
+        }
+
+        logger.info('Fetching import result for job', { id: String(job._id) });
         return res.json(job);
     } catch (err) {
-        console.error('Unexpected error in getImportResult:', err);
+        logger.error('Unexpected error in getImportResult', { error: err.message, stack: err.stack });
         next(err);
     }
 }
 
-module.exports = { upload, uploadCSV, getImportResult };
+// GET /api/import - retrieves a paginated list of import jobs
+async function getImports(req, res, next) {
+    try {
+        const page = parseInt(req.query.page) || DEFAULT_PAGE_NUMBER;
+        const limit = parseInt(req.query.limit) || DEFAULT_PAGE_SIZE;
+        const skip = (page - 1) * limit;
+
+        if (page < 1 || limit < 1) {
+            return next(httpError(400, ERROR_MESSAGES.INVALID_PAGE));
+        }
+
+        if (limit > MAX_PAGE_SIZE) {
+            return next(httpError(400, ERROR_MESSAGES.LIMIT_TOO_LARGE));
+        }
+
+        const [importJobs, total] = await Promise.all([
+            ImportJob.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+            ImportJob.countDocuments()
+        ]);
+
+        res.json({
+            data: importJobs,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            }
+        })
+
+    } catch (err) {
+        next(err);
+    }
+}
+
+module.exports = { upload, uploadCSV, getImportsById, getImports };

@@ -2,12 +2,6 @@ const { Schema, model } = require('mongoose');
 
 const importJobSchema = new Schema(
     {
-        jobId: {
-            type: String,
-            required: true,
-            unique: true,
-            index: true
-        },
         filename: {
             type: String,
             required: true
