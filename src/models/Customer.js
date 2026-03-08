@@ -1,4 +1,6 @@
 const { Schema, model } = require('mongoose');
+const CONSTANTS = require('../utils/constants');
+const ERROR_MESSAGES = require('../utils/errorMessages');
 
 function isNonEmptyString(v) {
     return typeof v === 'string' && v.trim().length > 0;
@@ -6,8 +8,7 @@ function isNonEmptyString(v) {
 
 function isValidEmail(v) {
     if (v == null) return true; 
-    const emailRegex = /^\S+@\S+\.\S+$/;
-    return emailRegex.test(v);
+    return CONSTANTS.EMAIL_REGEX.test(v);
 }
 
 function isPastDate(v) {
@@ -17,7 +18,7 @@ function isPastDate(v) {
 
 function isValidTimezone(tz) {
     if (tz == null) return true;
-    return Intl.supportedValuesOf("timeZone").includes(tz);
+    return CONSTANTS.VALID_TIMEZONES.has(tz);
 }
 
 const customerSchema = new Schema(
@@ -28,7 +29,7 @@ const customerSchema = new Schema(
             trim: true,
             validate: {
                 validator: isNonEmptyString,
-                message: 'Full name must be a non-empty string'
+                message: ERROR_MESSAGES.INVALID_FULL_NAME
             }
         },
 
@@ -39,7 +40,7 @@ const customerSchema = new Schema(
             trim: true,
             validate: {
                 validator: isValidEmail,
-                message: 'Invalid email format'
+                message: ERROR_MESSAGES.INVALID_EMAIL
             }
         },
 
@@ -47,7 +48,7 @@ const customerSchema = new Schema(
             type: Date,
             validate: {
                 validator: isPastDate,
-                message: 'Date of birth must be in the past'
+                message: ERROR_MESSAGES.FUTURE_DATE_OF_BIRTH
             }
         },
 
@@ -56,7 +57,7 @@ const customerSchema = new Schema(
             trim: true,
             validate: {
                 validator: isValidTimezone,
-                message: 'Invalid IANA timezone identifier'
+                message: ERROR_MESSAGES.INVALID_TIMEZONE
             }
         }
     },

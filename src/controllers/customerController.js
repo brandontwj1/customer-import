@@ -1,25 +1,6 @@
 const Customer = require('../models/Customer');
-
-const DEFAULT_PAGE_SIZE = 20;
-const DEFAULT_PAGE_NUMBER = 1;
-const MAX_PAGE_SIZE = 100;
-
-const ALLOWED_UPDATE_FIELDS = new Set([
-    'full_name',
-    'email',
-    'date_of_birth',
-    'timezone',
-]);
-
-const ERROR_MESSAGES = {
-    INVALID_PARAMS: 'Page and limit must be a positive integer',
-    LIMIT_TOO_LARGE: `Limit must not exceed ${MAX_PAGE_SIZE}`,
-    NO_UPDATE_FIELDS: 'No fields provided for update',
-    UNKNOWN_UPDATE_FIELDS: 'Unknown field(s) provided for update',
-    CUSTOMER_NOT_FOUND: 'Customer not found',
-    INVALID_CUSTOMER_ID: 'Invalid customer ID',
-    EMAIL_IN_USE: 'Email already in use',
-};
+const CONSTANTS = require('../utils/constants');
+const ERROR_MESSAGES = require('../utils/errorMessages');
 
 
 
@@ -33,15 +14,15 @@ function httpError(status, message) {
 // GET /api/customers?page=1&limit=20 - returns paginated list of customers
 async function getCustomers(req, res, next) {
     try {
-        const page = parseInt(req.query.page) || DEFAULT_PAGE_NUMBER;
-        const limit = parseInt(req.query.limit) || DEFAULT_PAGE_SIZE;
+        const page = parseInt(req.query.page) || CONSTANTS.DEFAULT_PAGE_NUMBER;
+        const limit = parseInt(req.query.limit) || CONSTANTS.DEFAULT_PAGE_SIZE;
         const skip = (page - 1) * limit;
 
         if (page < 1 || limit < 1) {
-            return next(httpError(400, ERROR_MESSAGES.INVALID_PARAMS));
+            return next(httpError(400, ERROR_MESSAGES.INVALID_PAGE_PARAMS));
         }
 
-        if (limit > MAX_PAGE_SIZE) {
+        if (limit > CONSTANTS.MAX_PAGE_SIZE) {
             return next(httpError(400, ERROR_MESSAGES.LIMIT_TOO_LARGE));
         }
 
@@ -52,12 +33,10 @@ async function getCustomers(req, res, next) {
 
         res.json({
             data: customers,
-            pagination: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit)
-            }
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
         })
 
     } catch (err) {
@@ -73,7 +52,7 @@ async function getCustomerById(req, res, next) {
         res.json(customer);
 
     } catch (err) {
-        if (err.name === 'CastError') return next(httpError(400, ERROR_MESSAGES.INVALID_CUSTOMER_ID)); 
+        if (err.name === 'CastError') return next(httpError(400, ERROR_MESSAGES.INVALID_CUSTOMER_ID));
         next(err);
     }
 }
@@ -83,7 +62,7 @@ async function getCustomerById(req, res, next) {
 async function updateCustomerById(req, res, next) {
     try {
         const incomingFields = Object.keys(req.body || {});
-        const unknownFields = incomingFields.filter((f) => !ALLOWED_UPDATE_FIELDS.has(f));
+        const unknownFields = incomingFields.filter((f) => !CONSTANTS.ALLOWED_UPDATE_FIELDS.has(f));
 
         if (incomingFields.length === 0) {
             return next(httpError(400, ERROR_MESSAGES.NO_UPDATE_FIELDS));
@@ -109,7 +88,7 @@ async function updateCustomerById(req, res, next) {
 
     } catch (err) {
         if (err.name === 'CastError') return next(httpError(400, ERROR_MESSAGES.INVALID_CUSTOMER_ID));
-        if (err.code === 11000) return next(httpError(409, ERROR_MESSAGES.EMAIL_IN_USE));
+        if (err.code === 11000) return next(httpError(409, ERROR_MESSAGES.DUPLICATE_EMAIL));
         if (err.name === 'ValidationError' || err.name === 'StrictModeError') {
             return next(httpError(400, err.message));
         }
@@ -130,4 +109,4 @@ async function deleteCustomerById(req, res, next) {
     }
 }
 
-module.exports = { getCustomers, getCustomerById, updateCustomerById, deleteCustomerById};  
+module.exports = { getCustomers, getCustomerById, updateCustomerById, deleteCustomerById };  

@@ -4,7 +4,7 @@ const { upload, uploadCSV, getImportsById, getImports } = require('../controller
 const router = Router();
 
 router.post('/', upload.single('file'), uploadCSV);
-router.get('/:id', getImportsById);
 router.get('/', getImports);
+router.get('/:id', getImportsById);
 
 module.exports = router;

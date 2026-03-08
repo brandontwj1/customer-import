@@ -3,23 +3,14 @@ const multer = require('multer');
 const { Types } = require('mongoose');
 const Customer = require('../models/Customer');
 const ImportJob = require('../models/ImportJob');
-const { validateRow } = require('../services/csvService');
+const { validateRow, hasExpectedColumns } = require('../services/csvService');
 const { logger } = require('../middleware/logger');
+const ERROR_MESSAGES = require('../utils/errorMessages');
+const CONSTANTS = require('../utils/constants');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-const DEFAULT_PAGE_SIZE = 20;
-const DEFAULT_PAGE_NUMBER = 1;
-const MAX_PAGE_SIZE = 100;
 
-const ERROR_MESSAGES = {
-    INVALID_PAGE: 'Invalid page number. Must be a positive integer.',
-    LIMIT_TOO_LARGE: `Limit exceeds maximum allowed value of ${MAX_PAGE_SIZE}.`,
-    INVALID_CSV: 'Could not parse CSV file. Check that it is valid CSV with a header row.',
-    IMPORT_JOB_NOT_FOUND: 'Import job not found.',
-    EMAIL_IN_USE: 'Email already exists in the database.',
-    NO_FILE_UPLOADED: 'No file uploaded. Use form-data with field name "file".',
-};
 
 // POST /api/import - accepts multipart form-data with a CSV file, returns import job _id immediately
 async function uploadCSV(req, res, next) {
@@ -42,16 +33,33 @@ async function uploadCSV(req, res, next) {
         // Parse the CSV buffer into row objects
         let records;
         try {
+            let headerColumns = [];
             records = parse(req.file.buffer, {
-                columns: true,
+                columns: (header) => {
+                    headerColumns = header;
+                    return header;
+                },
                 skip_empty_lines: true,
                 trim: true,
             });
+
+            if (!hasExpectedColumns(headerColumns)) {
+                logger.warn('Upload rejected: CSV has invalid columns', {
+                    jobId: String(job._id),
+                    receivedColumns: headerColumns,
+                    expectedColumns: CONSTANTS.EXPECTED_COLUMNS,
+                });
+                await ImportJob.findByIdAndUpdate(job._id, { status: 'failed' });
+                return res.status(400).json({
+                    error: ERROR_MESSAGES.INVALID_CSV_COLUMNS,
+                    id: job._id,
+                });
+            }
         } catch (parseErr) {
             logger.error('CSV parse failed', { jobId: String(job._id), error: parseErr.message });
             await ImportJob.findByIdAndUpdate(job._id, { status: 'failed' });
             return res.status(400).json({
-                error: ERROR_MESSAGES.INVALID_CSV,
+                error: ERROR_MESSAGES.INVALID_CSV_FORMAT,
                 id: job._id,
             });
         }
@@ -86,7 +94,7 @@ async function uploadCSV(req, res, next) {
             } catch (dbErr) {
                 // Code 11000 = duplicate key (email already exists in the customers collection)
                 const reason = dbErr.code === 11000
-                    ? ERROR_MESSAGES.EMAIL_IN_USE
+                    ? ERROR_MESSAGES.DUPLICATE_EMAIL
                     : 'database error: ' + dbErr.message;
                 rejectedRecords.push({ row: rowNumber, data: row, errorMsgs: [reason] });
             }
@@ -122,7 +130,7 @@ async function getImportsById(req, res, next) {
         const { id } = req.params;
 
         if (!Types.ObjectId.isValid(id)) {
-            return res.status(404).json({ error: ERROR_MESSAGES.IMPORT_JOB_NOT_FOUND });
+            return res.status(404).json({ error: ERROR_MESSAGES.INVALID_IMPORT_ID });
         }
 
         const job = await ImportJob.findById(id);
@@ -143,15 +151,15 @@ async function getImportsById(req, res, next) {
 // GET /api/import - retrieves a paginated list of import jobs
 async function getImports(req, res, next) {
     try {
-        const page = parseInt(req.query.page) || DEFAULT_PAGE_NUMBER;
-        const limit = parseInt(req.query.limit) || DEFAULT_PAGE_SIZE;
+        const page = parseInt(req.query.page) || CONSTANTS.DEFAULT_PAGE_NUMBER;
+        const limit = parseInt(req.query.limit) || CONSTANTS.DEFAULT_PAGE_SIZE;
         const skip = (page - 1) * limit;
 
         if (page < 1 || limit < 1) {
-            return next(httpError(400, ERROR_MESSAGES.INVALID_PAGE));
+            return next(httpError(400, ERROR_MESSAGES.INVALID_PAGE_PARAMS));
         }
 
-        if (limit > MAX_PAGE_SIZE) {
+        if (limit > CONSTANTS.MAX_PAGE_SIZE) {
             return next(httpError(400, ERROR_MESSAGES.LIMIT_TOO_LARGE));
         }
 
@@ -162,12 +170,10 @@ async function getImports(req, res, next) {
 
         res.json({
             data: importJobs,
-            pagination: {
-                total,
-                page,
-                limit,
-                totalPages: Math.ceil(total / limit)
-            }
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
         })
 
     } catch (err) {
