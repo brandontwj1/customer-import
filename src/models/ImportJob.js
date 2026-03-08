@@ -11,6 +11,17 @@ const importJobSchema = new Schema(
             enum: ['pending', 'processing', 'completed', 'failed'],
             default: 'pending',
         },
+        failureReason: {
+            type: String,
+            default: null,
+            trim: true,
+            validate: {
+                validator: function (v) {
+                    return this.status !== 'failed' || (typeof v === 'string' && v.length > 0);
+                },
+                message: 'failureReason is required when status is failed',
+            },
+        },
         totalRecords: { type: Number, default: 0 },
         successCount: { type: Number, default: 0 },
         failedCount: { type: Number, default: 0 },

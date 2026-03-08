@@ -1,12 +1,10 @@
-const { parse } = require('csv-parse/sync');
 const multer = require('multer');
 const { Types } = require('mongoose');
-const Customer = require('../models/Customer');
 const ImportJob = require('../models/ImportJob');
-const { validateRow, hasExpectedColumns } = require('../services/csvService');
 const { logger } = require('../middleware/logger');
 const ERROR_MESSAGES = require('../utils/errorMessages');
 const CONSTANTS = require('../utils/constants');
+const importQueue = require('../queues/importQueue')
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -15,6 +13,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // POST /api/import - accepts multipart form-data with a CSV file, returns import job _id immediately
 async function uploadCSV(req, res, next) {
     logger.info('Received file upload request');
+    let job;
     try {
         if (!req.file) {
             logger.warn('Upload request rejected: missing file in multipart form-data');
@@ -23,103 +22,28 @@ async function uploadCSV(req, res, next) {
             });
         }
 
-        const job = await ImportJob.create({
+        job = await ImportJob.create({
             filename: req.file.originalname,
-            status: 'processing',
+            status: 'pending',
         });
 
         logger.info('Created import job', { jobId: String(job._id), filename: job.filename });
 
-        // Parse the CSV buffer into row objects
-        let records;
-        try {
-            let headerColumns = [];
-            records = parse(req.file.buffer, {
-                columns: (header) => {
-                    headerColumns = header;
-                    return header;
-                },
-                skip_empty_lines: true,
-                trim: true,
-            });
-
-            if (!hasExpectedColumns(headerColumns)) {
-                logger.warn('Upload rejected: CSV has invalid columns', {
-                    jobId: String(job._id),
-                    receivedColumns: headerColumns,
-                    expectedColumns: CONSTANTS.EXPECTED_COLUMNS,
-                });
-                await ImportJob.findByIdAndUpdate(job._id, { status: 'failed' });
-                return res.status(400).json({
-                    error: ERROR_MESSAGES.INVALID_CSV_COLUMNS,
-                    id: job._id,
-                });
-            }
-        } catch (parseErr) {
-            logger.error('CSV parse failed', { jobId: String(job._id), error: parseErr.message });
-            await ImportJob.findByIdAndUpdate(job._id, { status: 'failed' });
-            return res.status(400).json({
-                error: ERROR_MESSAGES.INVALID_CSV_FORMAT,
-                id: job._id,
-            });
-        }
-
-        logger.info('Processing import job records', { jobId: String(job._id), totalRecords: records.length });
-
-        let successCount = 0;
-        const rejectedRecords = [];
-
-        for (let i = 0; i < records.length; i++) {
-            const row = records[i];
-            const rowNumber = i + 1; // 1-based (row 1 = first data row after header)
-
-            // Validate the row with csvService
-            const errorMsgs = validateRow(row);
-            if (errorMsgs.length > 0) {
-                rejectedRecords.push({ row: rowNumber, data: row, errorMsgs });
-                continue;
-            }
-
-            // Save to MongoDB
-            try {
-                await Customer.create(
-                    {
-                        full_name: row.full_name.trim(),
-                        email: row.email ? row.email.trim().toLowerCase() : undefined,
-                        date_of_birth: row.date_of_birth ? new Date(row.date_of_birth) : undefined,
-                        timezone: row.timezone ? row.timezone.trim() : undefined,
-                    }
-                );
-                successCount++;
-            } catch (dbErr) {
-                // Code 11000 = duplicate key (email already exists in the customers collection)
-                const reason = dbErr.code === 11000
-                    ? ERROR_MESSAGES.DUPLICATE_EMAIL
-                    : 'database error: ' + dbErr.message;
-                rejectedRecords.push({ row: rowNumber, data: row, errorMsgs: [reason] });
-            }
-        }
-
-        // Update the job with final results
-        await ImportJob.findByIdAndUpdate(job._id, {
-            status: 'completed',
-            totalRecords: records.length,
-            successCount,
-            failedCount: rejectedRecords.length,
-            rejectedRecords,
-        });
-
-        logger.info('Import job completed', {
-            jobId: String(job._id),
-            totalRecords: records.length,
-            successCount,
-            failedCount: rejectedRecords.length,
+        // Add the job to the import queue with the CSV buffer
+        await importQueue.add({
+            importJobId: String(job._id),
+            csvBuffer: Array.from(req.file.buffer)
         });
 
         return res.status(202).json({ id: job._id });
-
     } catch (err) {
         logger.error('Unexpected error in uploadCSV', { error: err.message, stack: err.stack });
+        if (job?._id) {
+            await ImportJob.findByIdAndUpdate(job._id, {
+                status: 'failed',
+                failureReason: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+            });
+        }
         next(err);
     }
 }

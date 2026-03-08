@@ -14,12 +14,17 @@ services:
       - ME_CONFIG_MONGODB_URL=mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/
     depends_on:
       - mongodb
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
   app:
     build: .
     ports:
       - "3000:3000"
     environment:
       - MONGO_URI=mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${DB_NAME}?authSource=admin
+      - REDIS_URL=redis://redis:6379
       - CHOKIDAR_USEPOLLING=true
       - CHOKIDAR_INTERVAL=1000
     volumes:
@@ -28,6 +33,19 @@ services:
     command: npx nodemon --legacy-watch src/server.js
     depends_on:
       - mongodb
+      - redis
+  worker:
+    build: .
+    command: node src/workers/importWorker.js
+    environment:
+      - MONGO_URI=mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongodb:27017/${DB_NAME}?authSource=admin
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./:/app
+      - node_modules:/app/node_modules
+    depends_on:
+      - mongodb
+      - redis
 
 volumes:
   node_modules:
