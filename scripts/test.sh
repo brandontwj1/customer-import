@@ -21,13 +21,6 @@ docker compose up -d mongodb redis
 echo "Waiting for services to be ready..."
 sleep 5
 
-# Start worker in background
-npm run worker &
-WORKER_PID=$!
-
-# Wait for worker to connect
-sleep 3
-
 # Run tests
 echo "Running tests..."
 npm test

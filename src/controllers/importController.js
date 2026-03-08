@@ -8,8 +8,6 @@ const importQueue = require('../queues/importQueue')
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-
-
 // POST /api/import - accepts multipart form-data with a CSV file, returns import job _id immediately
 async function uploadCSV(req, res, next) {
     logger.info('Received file upload request');
@@ -80,11 +78,11 @@ async function getImports(req, res, next) {
         const skip = (page - 1) * limit;
 
         if (page < 1 || limit < 1) {
-            return next(httpError(400, ERROR_MESSAGES.INVALID_PAGE_PARAMS));
+            return res.status(400).json({ error: ERROR_MESSAGES.INVALID_PAGE_PARAMS });
         }
 
         if (limit > CONSTANTS.MAX_PAGE_SIZE) {
-            return next(httpError(400, ERROR_MESSAGES.LIMIT_TOO_LARGE));
+            return res.status(400).json({ error: ERROR_MESSAGES.LIMIT_TOO_LARGE });
         }
 
         const [importJobs, total] = await Promise.all([
