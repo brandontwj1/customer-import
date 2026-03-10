@@ -1,7 +1,15 @@
 const Bull = require('bull');
 
-const importQueue = new Bull('csv-import', {
-  redis: process.env.REDIS_URL || process.env.REDIS_URL_LOCAL,
-});
+let importQueue;
+
+if (process.env.REDIS_URL) {
+    importQueue = new Bull('csv-import', {
+        redis: process.env.REDIS_URL
+    });
+} else {
+    // Provide a lightweight stub so the app can be imported in test
+    // environments without a running Redis instance.
+    importQueue = { add: async () => {} };
+}
 
 module.exports = importQueue;

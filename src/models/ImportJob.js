@@ -16,6 +16,7 @@ const importJobSchema = new Schema(
             default: null,
             trim: true,
             validate: {
+                // failureReason is only required when the job status is failed.
                 validator: function (v) {
                     return this.status !== 'failed' || (typeof v === 'string' && v.length > 0);
                 },
@@ -27,13 +28,13 @@ const importJobSchema = new Schema(
         failedCount: { type: Number, default: 0 },
         rejectedRecords: [
             {
-                row: { type: Number },      // CSV row number (1, 2, 3...)
-                data: { type: Object },     // actual row data from CSV
-                errorMsgs: [{ type: String }]  // array of error messages
+                row: { type: Number }, // CSV row number (1, 2, 3...)
+                data: { type: Object }, // actual row data from CSV
+                errorMsgs: [{ type: String }] // array of error messages
             }
         ]
     },
-    { timestamps: true }  // gives createdAt, updatedAt
+    { timestamps: true } 
 );
 
 module.exports = model('ImportJob', importJobSchema);

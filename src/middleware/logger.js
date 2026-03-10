@@ -11,7 +11,7 @@ const logger = createLogger({
     ],
 });
 
-// Middleware: logs method, URL, and status code for every response
+// Logs method, URL, and status code for every response
 function requestLogger(req, res, next) {
     res.on('finish', () => {
         logger.info(`${req.method} ${req.originalUrl} ${res.statusCode}`);

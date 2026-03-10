@@ -8,16 +8,21 @@ const importQueue = require('../queues/importQueue')
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// POST /api/import - accepts multipart form-data with a CSV file, returns import job _id immediately
+function httpError(status, message) {
+    const err = new Error(message);
+    err.status = status;
+    return err;
+}
+
+// POST /api/import - accepts multipart form-data with a CSV file, returns import job _id immediately, enqueues the file for processing
 async function uploadCSV(req, res, next) {
     logger.info('Received file upload request');
     let job;
     try {
         if (!req.file) {
             logger.warn('Upload request rejected: missing file in multipart form-data');
-            return res.status(400).json({
-                error: ERROR_MESSAGES.NO_FILE_UPLOADED,
-            });
+            next(httpError(400, ERROR_MESSAGES.NO_FILE_UPLOADED));
+            return;
         }
 
         job = await ImportJob.create({
@@ -27,7 +32,7 @@ async function uploadCSV(req, res, next) {
 
         logger.info('Created import job', { jobId: String(job._id), filename: job.filename });
 
-        // Add the job to the import queue with the CSV buffer
+        // Queue payloads should stay JSON-serializable, so convert Buffer to a plain number array.
         await importQueue.add({
             importJobId: String(job._id),
             csvBuffer: Array.from(req.file.buffer)
@@ -51,15 +56,18 @@ async function getImportsById(req, res, next) {
     try {
         const { id } = req.params;
 
+        // Reject invalid ids before querying MongoDB to avoid cast errors.
         if (!Types.ObjectId.isValid(id)) {
-            return res.status(404).json({ error: ERROR_MESSAGES.INVALID_IMPORT_ID });
+            next(httpError(400, ERROR_MESSAGES.INVALID_IMPORT_ID));
+            return;
         }
 
         const job = await ImportJob.findById(id);
 
         if (!job) {
             logger.warn('Import result requested for unknown _id', { id });
-            return res.status(404).json({ error: ERROR_MESSAGES.IMPORT_JOB_NOT_FOUND });
+            next(httpError(404, ERROR_MESSAGES.IMPORT_JOB_NOT_FOUND));
+            return;
         }
 
         logger.info('Fetching import result for job', { id: String(job._id) });
@@ -78,11 +86,13 @@ async function getImports(req, res, next) {
         const skip = (page - 1) * limit;
 
         if (page < 1 || limit < 1) {
-            return res.status(400).json({ error: ERROR_MESSAGES.INVALID_PAGE_PARAMS });
+            next(httpError(400, ERROR_MESSAGES.INVALID_PAGE_PARAMS));
+            return;
         }
 
         if (limit > CONSTANTS.MAX_PAGE_SIZE) {
-            return res.status(400).json({ error: ERROR_MESSAGES.LIMIT_TOO_LARGE });
+            next(httpError(400, ERROR_MESSAGES.LIMIT_TOO_LARGE));
+            return;
         }
 
         const [importJobs, total] = await Promise.all([

@@ -2,9 +2,6 @@ const Customer = require('../models/Customer');
 const CONSTANTS = require('../utils/constants');
 const ERROR_MESSAGES = require('../utils/errorMessages');
 
-
-
-// Helper function to create an Error object
 function httpError(status, message) {
     const err = new Error(message);
     err.status = status;
@@ -62,6 +59,7 @@ async function getCustomerById(req, res, next) {
 async function updateCustomerById(req, res, next) {
     try {
         const incomingFields = Object.keys(req.body || {});
+        // Only allow explicit, schema-safe fields for partial updates.
         const unknownFields = incomingFields.filter((f) => !CONSTANTS.ALLOWED_UPDATE_FIELDS.has(f));
 
         if (incomingFields.length === 0) {

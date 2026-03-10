@@ -4,7 +4,7 @@ require('./setup');
 
 const app = require('../../src/app');
 
-const VALID_CSV_PATH = path.join(__dirname, '../valid/valid_10_entries.csv');
+const VALID_CSV_PATH = path.join(__dirname, '../fixtures/valid/valid_10_entries.csv');
 
 
 describe('GET /api/import', () => {
@@ -77,7 +77,7 @@ describe('POST /api/import', () => {
     test('returns 202 with and id when valid CSV with no date_of_birth is uploaded', async () => {
         const res = await request(app)
             .post('/api/import')
-            .attach('file', path.join(__dirname, '../valid/valid_missing_dob.csv'));
+            .attach('file', path.join(__dirname, '../fixtures/valid/valid_missing_dob.csv'));
         expect(res.status).toBe(202);
         expect(res.body.id).toBeDefined();
         expect(typeof res.body.id).toBe('string');
@@ -86,7 +86,7 @@ describe('POST /api/import', () => {
     test('returns 202 with and id when valid CSV with no email is uploaded', async () => {
         const res = await request(app)
             .post('/api/import')
-            .attach('file', path.join(__dirname, '../valid/valid_missing_email.csv'));
+            .attach('file', path.join(__dirname, '../fixtures/valid/valid_missing_email.csv'));
         expect(res.status).toBe(202);
         expect(res.body.id).toBeDefined();
         expect(typeof res.body.id).toBe('string');
@@ -95,7 +95,7 @@ describe('POST /api/import', () => {
     test('returns 202 with and id when valid CSV with no timezone is uploaded', async () => {
         const res = await request(app)
             .post('/api/import')
-            .attach('file', path.join(__dirname, '../valid/valid_missing_timezone.csv'));
+            .attach('file', path.join(__dirname, '../fixtures/valid/valid_missing_timezone.csv'));
         expect(res.status).toBe(202);
         expect(res.body.id).toBeDefined();
         expect(typeof res.body.id).toBe('string');

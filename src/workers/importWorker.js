@@ -13,7 +13,6 @@ require('dotenv').config();
 const concurrency = Number(process.env.IMPORT_WORKER_CONCURRENCY) || 5;
 const safeConcurrency = Number.isInteger(concurrency) && concurrency > 0 ? concurrency : 5;
 
-// Connect to MongoDB before starting the worker
 async function startWorker() {
     await connectDB();
     importQueue.process(safeConcurrency, async (job) => {
@@ -26,6 +25,7 @@ async function startWorker() {
         try {
             let headerColumns = [];
             records = parse(csvBuffer, {
+                // Capture the original header row for schema validation.
                 columns: (header) => {
                     headerColumns = header;
                     return header;
@@ -56,7 +56,7 @@ async function startWorker() {
 
         for (let i = 0; i < records.length; i++) {
             const row = records[i];
-            const rowNumber = i + 1; // 1-based (row 1 = first data row after header)
+            const rowNumber = i + 1; 
 
             // Validate the row with csvService
             const errorMsgs = validateRow(row);
@@ -77,7 +77,6 @@ async function startWorker() {
                 );
                 successCount++;
             } catch (dbErr) {
-                // Code 11000 = duplicate key (email already exists in the customers collection)
                 const reason = dbErr.code === 11000
                     ? ERROR_MESSAGES.DUPLICATE_EMAIL
                     : 'database error: ' + dbErr.message;

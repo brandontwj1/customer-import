@@ -30,7 +30,7 @@ describe('hasExpectedColumns', () => {
         expect(hasExpectedColumns(header)).toBe(false);
     });
 
-    test('returns false if columns are in different order', () => {
+    test('returns true if columns are in different order', () => {
         const header = ['email', 'full_name', 'timezone', 'date_of_birth'];
         expect(hasExpectedColumns(header)).toBe(true); // Order should not matter
     });
